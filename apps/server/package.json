@@ -1,0 +1,25 @@
+{
+  "name": "@trellis/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@feathersjs/errors": "^5.0.0",
+    "@feathersjs/feathers": "^5.0.0",
+    "@feathersjs/koa": "^5.0.0",
+    "@feathersjs/socketio": "^5.0.0",
+    "@feathersjs/transport-commons": "^5.0.0",
+    "@trellis/client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5.7.0"
+  }
+}

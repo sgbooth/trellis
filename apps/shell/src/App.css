@@ -14,28 +14,8 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
-  margin: 0 auto;
-  max-width: 720px;
-  padding: 4vh 2rem;
-}
-
-h1 {
-  text-align: center;
-}
-
-.plugin-label {
-  text-align: center;
-  font-size: 0.85em;
-  color: #666;
-}
-
-.plugin-panel {
-  margin-top: 2rem;
-  padding: 1.5rem;
-  border-radius: 8px;
-  background-color: #ffffff;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.1);
+.app-root {
+  min-height: 100vh;
 }
 
 button {
@@ -65,14 +45,6 @@ button:active {
   :root {
     color: #f6f6f6;
     background-color: #2f2f2f;
-  }
-
-  .plugin-label {
-    color: #aaa;
-  }
-
-  .plugin-panel {
-    background-color: #1e1e1e;
   }
 
   button {
