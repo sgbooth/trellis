@@ -9,9 +9,10 @@ interface State {
 }
 
 /**
- * Catches failed plugin:// loads / render errors from the dynamically
- * loaded plugin, so a bad bundle shows an error instead of a blank/crashed
- * shell. Error boundaries can't be function components — must be a class.
+ * Catches failed bundle loads (fetched from apps/server) / render errors
+ * from the dynamically loaded plugin, so a bad bundle shows an error
+ * instead of a blank/crashed shell. Error boundaries can't be function
+ * components — must be a class.
  */
 export class PluginErrorBoundary extends Component<Props, State> {
   state: State = { error: null };

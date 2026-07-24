@@ -4,61 +4,61 @@ Guidance for agentic (Claude Code) development in this repo. See [README.md](REA
 
 ## What this is
 
-Trellis is a Tauri desktop shell that serves a bespoke client app (a sandboxed ES module) without a shell reinstall per feature. The shell owns a fixed, IT-reviewed capability surface; the app consumes a scoped subset of it via `HostContext`. New user-facing functionality should almost always be built in **`apps/client`**, not a shell change.
+Trellis is a **bare scaffold for experimenting with building features in Tauri**, not a finished product shell. It's a Tauri desktop shell that dynamically loads a bespoke client app, fetched at runtime from [apps/server](apps/server), so a new feature ships by rebuilding `apps/client`, pushing the new build to the server, and reloading — no shell reinstall required. `apps/shell` and `apps/client` are built by the same team at the same trust level, so the client gets the full `HostContext` the shell can construct, unscoped — there's no capability-grant/sandboxing layer between them. Dynamic loading exists purely for deploy velocity, not as a trust boundary. New user-facing functionality should almost always be built in **`apps/client`**, not a shell or server change.
+
+The intended lifecycle: prototype a feature idea quickly here, in `apps/client`, with low ceremony. Once it proves itself and becomes something people actually depend on, it's expected to **graduate out into its own standalone Tauri app** — its own shell, its own release cycle, and real authentication if it needs one. Don't build this scaffold toward becoming that end state (e.g. don't add code signing, real auth, or a capability-review system here) — that would defeat the point of keeping it a fast, disposable place to experiment before committing to a real app.
 
 ```
-apps/shell/          the Tauri host — Rust capability/IPC layer + React chrome
-apps/server/          the core broker — minimal FeatherJS app; identity/audit
-                      service + provisional llm/bundles stubs;
-                      mounts the client app's server-owned service
+apps/shell/          the Tauri host — Rust IPC layer + React chrome
+apps/server/          minimal FeatherJS app: serves apps/client's built
+                      bundle as static files (the actual distribution
+                      mechanism) and a shared identity/audit service; the
+                      slot for future global/shared features (broadcast,
+                      chat) and any server-owned endpoint the client app
+                      needs
 apps/client/          the bespoke client app for this deployment — the one
                       thing that actually changes when a team builds their
                       feature; owns its client UI and (optionally) its
-                      server-side endpoint (apps/client/server)
-sdk/                  shared contract: Capability, PluginManifest, HostContext,
+                      server-owned endpoint, mounted into apps/server
+sdk/                  shared contract: PluginManifest, HostContext,
                       definePlugin — also exports reusable UI components a new
                       client app can start from (e.g. TrellisInfo), not just types
 ```
 
-**There's exactly one client app, at a fixed location.** `apps/shell` statically imports `@trellis/client` directly — no selection mechanism, no per-checkout config. To build a different app, replace what's in `apps/client`.
+**There's exactly one client app, at a fixed location.** `apps/shell` dynamically loads `@trellis/client`'s built bundle from `apps/server` at runtime — no selection mechanism, no per-checkout config. To build a different app, replace what's in `apps/client`.
 
-## Current build phase — read this before assuming anything is real
+## What's implemented vs. not — read this before assuming anything is real
 
-We're through **Stage 3** per the README's build-phases list (Stage 1 static shell, Stage 2 local dynamic loading, Stage 3 manifest + capability declarations). Concretely:
+- [App.tsx](apps/shell/src/App.tsx) `React.lazy`-loads the plugin's component from `apps/server`'s `/index.js` (see [app.ts](apps/server/src/app.ts)'s `koa-static` mount) — no static import, so a new `apps/client` build is live on next reload without a shell rebuild. See `apps/client/build.mjs` for the esbuild step that produces `dist/index.js`/`dist/manifest.json`.
+- **There is no capability-grant system.** `apps/client` and `apps/shell` are built by the same team; `App.tsx` hands the plugin the full `HostContext` it can construct, unscoped. `HostContext` fields can still be `undefined` (e.g. `host.secrets`, `host.llm`) but only because that API isn't implemented yet, not because of any per-plugin grant — plugins should still feature-detect (`if (host.device)`) for that reason.
+- `FilesApi.read`/`write`/`watch`/`openDialog`, `LlmApi`, `ClipboardApi`, `SecretsApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`, `EmailApi`, `CalendarApi`, and `ContactsApi` are all declared in [types.ts](sdk/src/types.ts) but have no real implementation yet — shape exists, plumbing doesn't. `Email`/`Calendar`/`Contacts` are placeholders for an eventual move of business functions (email, calendar, directory lookup) that currently live in separate tools like Outlook into this app. None of these are global/shared state, so none of them belong on `apps/server` (see "Backend" below) — a direct Tauri Rust command is the expected way to build any of them. `FilesApi.open` and `onClosed` (Linux only so far — see [close_watch.rs](apps/shell/src-tauri/src/close_watch.rs)) are real.
+- **Scoping parameters (path prefixes, allowed domains, etc.) belong in Tauri's own `capabilities/*.json`.** When a Tauri-plugin-backed API like file access gets implemented for real, its fine-grained restriction (which paths, which domains) is Tauri's own permission/scope system — the same mechanism already granting `opener:default` in [default.json](apps/shell/src-tauri/capabilities/default.json) — not something `PluginManifest` needs to carry.
+- **Not done, and not planned**: no plugin registry (still exactly one client app, fixed location), no code-signature verification, no auto-updater. None of these were ever about protecting against a less-trusted plugin author — that was the only reason any of them were on a roadmap, and that roadmap has been retired along with the capability model. Real bundle distribution (as opposed to a dev-time local path) **is** done now — see "Backend" below — that's different from the retired items above; it just happens to be a plain static-file server rather than anything signed/verified.
 
-- [App.tsx](apps/shell/src/App.tsx) fetches `apps/client`'s manifest over `plugin://client/manifest.json` and `React.lazy`-loads its component from `plugin://client/index.js` — no more static import. See [lib.rs](apps/shell/src-tauri/src/lib.rs)'s `register_uri_scheme_protocol("plugin", ...)` for the protocol handler, and `apps/client/build.mjs` for the esbuild step that produces `dist/index.js`/`dist/manifest.json`.
-- `files:read`/`write`/`watch`/`open-dialog`, `llm:invoke`, `clipboard:*`, `database:query`, `secrets:*`, `media:camera`, `media:microphone`, and `notifications:send` are all declared in [types.ts](sdk/src/types.ts) but have no real implementation yet — shape exists, plumbing doesn't. `files:open-file` is the one exception: it's real ([filesHost.ts](apps/shell/src/filesHost.ts), backed by `tauri-plugin-opener`, which was already a dependency for unrelated reasons).
-- **Capability grants are Rust-enforced, not just self-declared.** The `plugin://` handler filters `manifest.json`'s `capabilities` against [allowed-capabilities.json](apps/shell/src-tauri/allowed-capabilities.json) (compiled into the binary via `include_str!`, not read from disk at runtime — it's policy, not something local file access should be able to edit) before the shell ever sees the manifest. `App.tsx` then reduces `HostContext` via [scopeHostContext.ts](apps/shell/src/scopeHostContext.ts) using that already-filtered list — `scopeHostContext` itself is just the mechanical reduction, not a security boundary. Confirmed working live, not just in the Rust unit tests: a capability outside the allowlist gets stripped before the shell ever sees it, with a `[capabilities] ... denied ...` log line — the plugin just doesn't get that key on `HostContext` (`host.files === undefined`, no error, no crash). This is deliberate — see the `HostContext` doc comment.
-- **Scoping parameters (path prefixes, allowed domains, etc.) belong in Tauri's own `capabilities/*.json`, not `PluginManifest`.** Our allowlist is coarse/boolean — does the deployment's one client app get a capability at all. The *fine-grained* restriction (which paths, which domains) for a capability backed by a real Tauri plugin is Tauri's own permission/scope system, the same mechanism already granting `opener:default`. Don't add a scoping field to `PluginManifest`/`Capability` — when a capability like `files:read` actually gets implemented, its scoping shows up as a `capabilities/*.json` permission entry alongside it, not as new manifest syntax.
-- **Not done yet**: no plugin registry (still exactly one client app, fixed location), no signature verification (Stage 4 — a plugin's *code* isn't verified, only which capabilities it can request), no real distribution (Stage 5 — `apps/client/dist` is read from a dev-time path, not an installed-plugins directory).
-- **Backend exists, minimally.** [apps/server](apps/server) is a FeatherJS app with **no authentication** — deliberate, temporary, "trust based on nothing," flagged loudly in [app.ts](apps/server/src/app.ts). It hosts a shared `identity` service (audit-trail only, unverified) and mounts the client app's server-owned service; `llm`/`bundles` are provisional core-owned stubs (`501 NotImplemented`) until something claims them for real. See "Backend" below.
-
-When asked to "add a capability" or "wire up X for the client app," check whether the plumbing exists yet before assuming it does. Most of the capability table in the README is a target design, not current code.
+When asked to "wire up X for the client app," check whether the plumbing exists yet before assuming it does — extend `HostContext`/`sdk/src/types.ts` directly.
 
 ## Core invariants to preserve
 
-- **Plugins never get raw access to Rust/OS.** Everything crosses through `HostContext`, which is assembled from capabilities the plugin's manifest declared. A plugin whose manifest doesn't request `files:read` must get `host.files === undefined`, not a `files` object that throws.
-- **Capability shape lives in `sdk`, not per-plugin.** Adding a new capability means: extend `Capability` in [types.ts](sdk/src/types.ts), add its API interface (e.g. `FilesApi`), add it to `HostContext`, then wire the shell-side implementation. Don't let a plugin invent its own ad hoc host API.
+- **Host API shape lives in `sdk`, not per-plugin.** Adding a new host API means: add its interface to [types.ts](sdk/src/types.ts) (e.g. `FilesApi`), add it to `HostContext`, then wire the shell-side implementation in `apps/shell/src`. Don't let the client app invent its own ad hoc host API or reach past `HostContext` into Tauri/Node APIs directly — not for a trust reason, just so `sdk` stays the one place documenting what the shell exposes.
 - **`react`/`react-dom`/`react/jsx-runtime` are externalized**, not bundled per plugin — the host provides them. If you touch plugin build config, don't break this (duplicate React instances silently break hooks).
-- **The manifest's `capabilities` array is the source of truth for what a plugin can touch.** UI (like the capability list rendered in `App.tsx`) should reflect it, not hardcode assumptions.
-- **New verbs should be expressible via existing capability verbs, scoped at the Tauri-capability-file layer** (path prefixes, allowed domains, database scopes — see above) rather than new `Capability` enum entries per feature. Before adding a new `Capability`, check if an existing verb with different Tauri-side scoping covers it. Capabilities should map to system-level resources (files, network, a database, secret storage) — not app-specific business concepts; `workflow:read`/`workflow:transition` got cut from v1 for exactly this reason.
-- `system:shell-exec` is explicitly off the table — don't introduce arbitrary shell exec as a capability or an escape hatch.
+- Don't add a raw arbitrary-shell-exec host API (a `HostContext.exec(command)` escape hatch) — not because of a trust boundary, but because it's a bad API shape that defeats the point of having a typed `HostContext` at all; model the underlying need as a specific typed operation instead.
 
 ## Workflow
 
 - `pnpm dev` / `pnpm build` / `pnpm typecheck` / `pnpm lint` run through turborepo across the workspace (`apps/*`, `sdk`).
 - `pnpm tauri` proxies to the shell's Tauri CLI.
-- New functionality = edit `apps/client` directly (`workspace:*` dep on `@trellis/sdk`, default-exports `definePlugin({ manifest, Component })`). Add/extend `apps/client/server` too if it needs backend logic (see "Backend" below).
-- Don't add capability needs to the manifest speculatively — request only what the app's actual functionality uses; this list is what a future reviewer/IT approval will read.
+- New functionality = edit `apps/client` directly (`workspace:*` dep on `@trellis/sdk`, default-exports `definePlugin({ manifest, Component })`). Add/extend `apps/client/server` too if it needs a server-owned endpoint (see "Backend" below) — but most new `HostContext` APIs won't need this; see the next section for when a server endpoint is actually the right call.
 
-## Backend — brokering access to other systems
+## Backend — global/shared concerns only, not a trust boundary
 
-The shell's webview is sandboxed and untrusted-by-design; plugins running inside it must never hold real credentials, API keys, or unmediated network access to internal/external systems. That means capabilities like `llm:invoke`, `network:fetch`, and `chat:invoke` can't terminate in the webview — they need a trusted broker in front of them.
+`apps/client` and `apps/shell` are the same trust level, so [apps/server](apps/server) doesn't exist to keep the webview from holding credentials — there's no "the webview can't be trusted" constraint here. It exists for things that are inherently **global or shared**, which no single client's own Tauri process can be on its own:
 
-That broker is [apps/server](apps/server), a FeatherJS app (opinionated choice — accepted trade-off of a heavier dependency footprint for services/hooks/channels structure and a clean slot for `@feathersjs/authentication` later instead of a rewrite). Its architecture:
+- **Serving the client bundle.** `apps/server`'s `koa-static` mount over `apps/client/dist` is the actual distribution mechanism — push a new build to the server and every running shell picks it up on next load. This is real, not a stub.
+- **A shared `identity` service** (audit-trail only, unverified — see the SECURITY note in [app.ts](apps/server/src/app.ts)) that a socket-connected client can call once to attach `{ username, displayName }` to its connection for server-side logging.
+- **Future broadcast-style features** — chat, notifications, anything that needs a process every connected client can reach. Nothing like this exists yet; FeatherJS was kept specifically because its services/channels model supports adding this without a rewrite when a real need shows up.
 
-- **The client app owns its own server-side endpoint, not just its client UI.** `apps/client/server/index.ts` exports `registerChatService(app)`; `apps/server/src/app.ts` imports it directly (`@trellis/client/server`) and mounts it. This is the pattern for real backend logic — extend `apps/client/server`, don't add feature logic to the core app.
-- **The core app stays minimal**: a shared `identity` service (any client can call it to attach an unverified `{ username, displayName }` to its connection — audit logging only, not auth), plus a provisional `llm`/`bundles` stub services that 501 until the client app claims them for real and takes over ownership the way it already did for `chat`.
+**What does *not* belong here:** anything per-request/per-user with no fan-out requirement — `LlmApi`, `EmailApi`, `CalendarApi`, `ContactsApi` calls are not global state, so they should be direct Tauri Rust commands (see `close_watch.rs` for the existing precedent of Rust doing real OS/network work), not routed through this server. Before adding something to `apps/server`, ask whether it's actually shared/global — if not, it's a Tauri command instead.
+
+- **The client app owns its own server-side endpoint, not just its client UI, for anything that does belong here.** The pattern (not currently instantiated — nothing's been added yet): `apps/client/server/index.ts` exports a `registerXService(app)`; `apps/server/src/app.ts` imports it (`@trellis/client/server`) and mounts it, the same way `identity` is mounted directly in `apps/server`. Extend `apps/client/server`, don't add client-specific feature logic to the core app.
 - **No authentication is registered anywhere in `apps/server` today.** This is explicit and temporary — "trust based on nothing." Don't build anything that assumes a client-claimed identity is verified; it isn't.
-- **The client app never constructs its own broker client.** The shell does (`apps/shell/src/identityHost.ts`, `chatHost.ts`) and hands the result through `HostContext`, same as every other capability — the app importing `socket.io-client` or `@feathersjs/feathers` directly would be a capability-model violation.
-- `apps/client` does have a build step now (`build.mjs`, esbuild → `dist/`), but it's only consumed via the `plugin://` protocol for the client bundle itself — real bundle *distribution* over the broker (serving it to other machines, per README's Stage 5) isn't implemented. The `bundles` stub exists to name that concern, not to work yet.
+- **The client app never constructs its own broker client.** Whatever server connection is needed lives in `apps/shell/src` and gets handed through `HostContext`, same as every other host API — keeps `HostContext` as the one seam between the two, and the client app never needs to know the server's URL/transport details itself.

@@ -1,24 +1,3 @@
-export type Capability =
-  | "files:read"
-  | "files:write"
-  | "files:watch"
-  | "files:open-dialog"
-  | "files:open-file"
-  | "network:fetch"
-  | "llm:invoke"
-  | "clipboard:read"
-  | "clipboard:write"
-  | "database:query"
-  | "secrets:read"
-  | "secrets:write"
-  | "media:camera"
-  | "media:microphone"
-  | "notifications:send"
-  | "custom:invoke"
-  | "identity:read"
-  | "chat:invoke"
-  | "device:info";
-
 export interface PluginManifest {
   id: string;
   name: string;
@@ -26,9 +5,6 @@ export interface PluginManifest {
   /** semver range this plugin was built against */
   sdkVersion: string;
   entry: string;
-  capabilities: Capability[];
-  /** ed25519 signature over hash(manifest + entry file); absent in Phase 1/2 (unsigned) */
-  signature?: string;
 }
 
 export interface FileEntry {
@@ -40,27 +16,22 @@ export interface FilesApi {
   read?(path: string): Promise<string>;
   write?(path: string, contents: string): Promise<void>;
   watch?(path: string, onChange: (event: { path: string }) => void): () => void;
+  /**
+   * Fires once when `path` is closed by a process that had it open for
+   * writing — a distinct system-level concern from `watch`'s content-change
+   * events, backed by a different (and on some platforms more privileged)
+   * mechanism per OS. See apps/shell/src-tauri/src/close_watch.rs.
+   */
+  onClosed?(path: string, callback: () => void): () => void;
   openDialog?(options?: { multiple?: boolean; directory?: boolean }): Promise<string[]>;
   /** Opens a path with the OS default app (or `openWith` if given). Real,
    * Tauri-opener-backed implementation — unlike the rest of FilesApi. */
   open?(path: string, openWith?: string): Promise<void>;
 }
 
-export interface LlmApi {
-  invoke(prompt: string, options?: { maxTokens?: number }): Promise<string>;
-}
-
 export interface ClipboardApi {
   read?(): Promise<string>;
   write?(text: string): Promise<void>;
-}
-
-/**
- * Local database access (tauri-plugin-sql). A system-level resource like
- * files/network/clipboard, not yet wired to a real Tauri plugin.
- */
-export interface DatabaseApi {
-  query(sql: string, params?: unknown[]): Promise<unknown[]>;
 }
 
 /**
@@ -88,20 +59,78 @@ export interface IdentityApi {
   get(): Promise<IdentityInfo>;
 }
 
-export interface ChatMessage {
-  from: string;
-  text: string;
-  ts: number;
+export type LlmEvent =
+  | { type: "chunk"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+/**
+ * Streaming relay to an LLM provider call. Not yet implemented — no backend
+ * exists. When built, this should be a direct Tauri Rust command (see
+ * close_watch.rs for the precedent of Rust doing real OS/network work
+ * directly), not a broker call — there is no broker in this architecture.
+ * Chunk-streamed rather than buffer-then-return so a real implementation
+ * doesn't double perceived latency.
+ */
+export interface LlmApi {
+  invoke(prompt: string, onEvent: (event: LlmEvent) => void, options?: { maxTokens?: number }): () => void;
+}
+
+export interface EmailMessage {
+  to: string[];
+  subject: string;
+  body: string;
+  cc?: string[];
+  bcc?: string[];
 }
 
 /**
- * Long-lived relay connection to a broker-hosted chat service. Deliberately
- * separate from `network:fetch`, which is one-shot and allowed-domain-scoped
- * — chat is a persistent connection with a different lifecycle/threat shape.
+ * Send-only relay to a mail transport (SMTP or similar — backend TBD). Not
+ * yet implemented — no backend exists. When built, this should be a direct
+ * Tauri Rust command, not a broker call. Kept as its own interface rather
+ * than folded into a generic "network" API because SMTP isn't HTTP and the
+ * call shape (fire-and-forget send to arbitrary recipients) doesn't match
+ * a fetch-style API.
  */
-export interface ChatApi {
-  send(text: string): Promise<void>;
-  onMessage(listener: (message: ChatMessage) => void): () => void;
+export interface EmailApi {
+  send(message: EmailMessage): Promise<void>;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string; // ISO 8601
+  end: string; // ISO 8601
+  attendees: string[];
+  location?: string;
+}
+
+/**
+ * Calendar access (Exchange/Graph/CalDAV — backend TBD). Not yet
+ * implemented — no backend exists; would be a direct Tauri Rust command
+ * when built. Split into `list`/`create` because they're different
+ * operations (a query vs. sending a real invite to real people), not
+ * because of any access-control distinction.
+ */
+export interface CalendarApi {
+  list?(range: { start: string; end: string }): Promise<CalendarEvent[]>;
+  create?(event: Omit<CalendarEvent, "id">): Promise<CalendarEvent>;
+}
+
+export interface ContactInfo {
+  name: string;
+  email: string;
+  department?: string;
+}
+
+/**
+ * Corporate directory/address-book lookup (backend TBD — e.g.
+ * LDAP/Graph/CardDAV). Not yet implemented — no backend exists; would be a
+ * direct Tauri Rust command when built. Read-only for now: writing to a
+ * shared corporate directory isn't a use case this models yet.
+ */
+export interface ContactsApi {
+  search(query: string): Promise<ContactInfo[]>;
 }
 
 /**
@@ -146,18 +175,20 @@ export interface NotificationsApi {
 }
 
 /**
- * Capabilities the plugin didn't declare (or wasn't granted) are omitted
- * entirely, not present-but-throwing — plugins should feature-detect via
- * `if (host.chat)` rather than try/catch.
+ * Fields are optional because not every host API is wired up yet (e.g.
+ * `secrets`, `camera`, `llm` have no real implementation behind them) — not
+ * because of any per-plugin grant. Plugins should feature-detect via
+ * `if (host.device)` rather than assume a field exists.
  */
 export interface HostContext {
   files?: FilesApi;
-  llm?: LlmApi;
   clipboard?: ClipboardApi;
-  database?: DatabaseApi;
   secrets?: SecretsApi;
   identity?: IdentityApi;
-  chat?: ChatApi;
+  llm?: LlmApi;
+  email?: EmailApi;
+  calendar?: CalendarApi;
+  contacts?: ContactsApi;
   device?: DeviceApi;
   camera?: CameraApi;
   microphone?: MicrophoneApi;

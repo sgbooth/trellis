@@ -13,7 +13,7 @@ declare global {
 // Handed to the dynamically-loaded plugin bundle via its build-time shim
 // (apps/client/shims) — one shared React instance, not a duplicate copy
 // bundled into the plugin, which would silently break hooks/context. Must
-// run before App ever tries to plugin://-load anything.
+// run before App ever tries to load the bundle from apps/server.
 globalThis.__trellisReact = React;
 globalThis.__trellisReactJsxRuntime = ReactJsxRuntime;
 

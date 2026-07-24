@@ -1,8 +1,9 @@
 # trellis
-A Tauri desktop shell deployed internally that hot-loads plugins (signed, sandboxed ES modules) without requiring a shell reinstall or a new IT security review per feature.
-IT/security reviews the shell's fixed capability surface once. New functionality ships as plugins consuming that surface, not as shell updates.
+Trellis is a **bare scaffold for experimenting with building features in Tauri** — a desktop shell that dynamically loads a bespoke client app, fetched at runtime from a small companion server, so a new feature ships by rebuilding `apps/client`, pushing the build to the server, and reloading, no shell reinstall required. `apps/shell` and `apps/client` are built by the same team at the same trust level; there's no capability-sandboxing layer between them.
 
-In practice: a team needs a feature, you build it, and it's live for them within the hour — no build pipeline, no app-store review, no shell release. Because plugins run inside the shell's reviewed capability surface rather than a browser tab, they can touch real user-space resources — local files, watched directories, native pickers, connected devices — the same way a native app would, not the sandboxed-away-from-everything model of a typical web app. The result behaves like an embedded, realtime local application per feature: fully dynamic, hot-swappable, and disposable, without carrying the cost (or risk) normally attached to that level of access.
+In practice: a team wants to try a feature idea in Tauri, you build it in `apps/client`, and it's live within the hour — no build pipeline for the shell, no app-store review, no shell release. Because the client app runs with full access to whatever `HostContext` the shell can construct, it can touch real user-space resources — local files, watched directories, native pickers, connected devices — the same way a native app would, not the sandboxed-away-from-everything model of a typical web app. The result behaves like an embedded, realtime local application per feature: fully dynamic and hot-swappable, without a shell-side capability review gating what it can do.
+
+This is a launchpad, not the intended end state for a mature feature. It's deliberately quick and low-ceremony so a team can prove out whether a feature idea in Tauri is worth building at all, before paying for a proper shell of its own. Once a feature graduates from "experiment" to "real product people depend on," the expected path is to fork it out into its own standalone Tauri app — with its own release cycle, its own auth story, and no dependency on this scaffold's shared shell/server. Trellis intentionally doesn't try to be that end state itself (no code signing, no auth, no capability review — see below); building those in would defeat the point of having a fast, disposable place to experiment first.
 
 
 ## Getting started
@@ -21,7 +22,7 @@ Each deployment/team forks this repo and builds their own `apps/client` on top o
    pnpm install
    pnpm dev
    ```
-3. **Build your feature in `apps/client`** — that's the one directory meant to change per deployment (see `CLAUDE.md` for the full operating manual on what's real vs. not-yet-implemented at the current build phase).
+3. **Build your feature in `apps/client`** — that's the one directory meant to change per deployment (see `CLAUDE.md` for the full operating manual on what's real vs. not-yet-implemented).
 
 ### Staying up to date with upstream
 
@@ -42,104 +43,44 @@ git log main..upstream/main   # see what's new
 git diff main..upstream/main  # see the actual diff
 ```
 
-# Project Summary: Capability-Gated Plugin Shell (Tauri)
+# Project Summary: Dynamically-Loaded Client Shell (Tauri)
 
+A Tauri desktop shell that dynamically loads a bespoke client app fetched at runtime from a small companion server, without requiring a shell reinstall per feature. `apps/shell` and `apps/client` are built by the same team at the same trust level — there is no capability-review boundary between them, and no signing/sandboxing story to maintain.
 
-A Tauri desktop shell deployed internally that hot-loads plugins, which are signed, sandboxed ES modules, without
-requiring a shell reinstall or a new IT security review per feature.
-IT/security reviews the shell's fixed capability surface once; new
-functionality ships as plugins consuming that surface, not as shell
-updates.
+**Primary pitch:** ship a new feature by rebuilding `apps/client`, pushing it to the server, and reloading — no shell rebuild, no reinstall, no app-store-style release cycle. The value is deploy velocity, full stop; this project does not model or defend against a less-trusted plugin author.
 
-**Primary pitch:** solves the actual friction that slows legal-tech
-adoption — the security/procurement review cycle — by decoupling
-feature velocity from the reviewed trust boundary. Frames as a
-governance model ("practice groups build their own tools within a
-boundary security already approved"), not just an engineering trick.
+> **Earlier design history:** this project originally modeled `apps/client` as a less-trusted, signed/sandboxed plugin, reviewed once by IT against a fixed capability surface, loaded via a custom Rust `plugin://` protocol reading a local dev-time path (see the "Build phases" section below for what that looked like). The `Capability` enum, the Rust-enforced allowlist, and ed25519 signing were built out and then deliberately retired once it became clear the actual org structure doesn't have a less-trusted team to sandbox against. The FeatherJS server (`apps/server`) briefly went with it too, then came back for a different reason — see CLAUDE.md's "Backend" section — it's no longer a trust boundary, just where genuinely shared/global things live (bundle distribution, and later broadcast-style features). `CLAUDE.md` is the authoritative, current description of the architecture; this file has been updated to match.
 
 ## Architecture
 
 ```
+apps/server (Node, FeatherJS)
+ - Serves apps/client's built bundle as static files — the real
+   distribution mechanism, not a stub
+ - Shared identity/audit service
+ - Slot for future global/shared features (broadcast, chat) and any
+   server-owned endpoint the client app needs
+
 Tauri Host (Rust)
- - Fixed capability set (declared once, reviewed once)
- - Custom asset protocol (plugin://...)
- - Signature verification (ed25519; internal deployment allows a
-   delegated-signer chain — root key held by IT, delegated keys
-   issued to practice groups/individuals)
- - Plugin manifest registry
+ - IPC commands (identity, device info, file-close detection, ...)
 
 Webview (React host shell)
- - React.lazy + Suspense per plugin
- - Shared context passed to plugins: file API, database/secrets
-   access, LLM proxy, etc. — scoped to only the capabilities that
-   plugin declared and was granted
+ - React.lazy + Suspense fetches the client app from apps/server
+ - Full HostContext passed through to the client app, unscoped — same
+   trust level, no per-plugin grant system
 ```
 
-Plugins are user-facing apps built entirely on top of the shell's
-fixed capability verbs. They don't add capabilities — they consume a
-subset of what already exists, the same way an iOS app requests
-existing OS permissions rather than inventing new ones.
+The client app is a user-facing app built entirely on top of whatever `HostContext` the shell can construct. There's no capability declaration or grant step — if the shell can build an API (files, identity, device info, etc.), the client app gets it.
 
-## Capability set (v1)
+## Host API surface (current)
 
-Modeled as **verbs on resource types** — the manifest just declares
-which verbs a plugin wants, as a flat list (no parameters baked into
-the enum or the manifest) — this is what keeps the capability list
-stable as plugins grow in number and variety.
+`HostContext` (see `sdk/src/types.ts`) is a plain set of optional fields, each an interface (`FilesApi`, `ClipboardApi`, `SecretsApi`, `IdentityApi`, `LlmApi`, `EmailApi`, `CalendarApi`, `ContactsApi`, `DeviceApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`). Fields are optional because the backing implementation may not be wired up yet, not because of any access grant — the client app should feature-detect (`if (host.device)`) rather than assume a field exists.
 
-**Where scoping actually lives:** not in `PluginManifest`. Capabilities
-backed by a real Tauri plugin (files, network, database, secrets,
-camera, mic) get their fine-grained restriction from **Tauri's own
-`capabilities/*.json` permission system** — glob path patterns,
-`$HOME`/`$APPDATA`-style path variables, allowed-origin lists — the
-exact mechanism already granting `opener:default` today
-(`apps/shell/src-tauri/capabilities/default.json`). Our own allowlist
-(`allowed-capabilities.json`) only answers the coarse question: does
-this deployment's client app get the capability *at all*. The table
-below describes what each capability's Tauri-side scope would restrict
-once it's actually implemented — it's descriptive of intent, not a
-field `PluginManifest` carries. Don't invent a second scoping syntax
-alongside the one Tauri already has.
+Most of these are declared but not yet implemented: `FilesApi.read`/`write`/`watch`/`openDialog`, `LlmApi`, `ClipboardApi`, `SecretsApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`, `EmailApi`, `CalendarApi`, `ContactsApi`. `FilesApi.open`/`onClosed` (Linux only so far) and the identity/device APIs are real.
 
-| Capability | Scoping parameter (enforced via Tauri's own capability file, once implemented) |
-|---|---|
-| `files:read` | path prefix / allowed directory list |
-| `files:write` | same |
-| `files:watch` | separate from read — subscription, own resource cost |
-| `files:open-dialog` | none — native picker, no blanket read access needed |
-| `files:open-file` | none for v1; could restrict to an allowed-path-prefix later like files:read. Real (tauri-plugin-opener), not just declared |
-| `network:fetch` | allowed domain list (internal hostnames for internal deployment) |
-| `llm:invoke` | unscoped for v1; consider model-tier/maxTokens param later |
-| `clipboard:read` | — |
-| `clipboard:write` | split from read; read is higher trust |
-| `database:query` | local DB file/scope (tauri-plugin-sql) |
-| `secrets:read` | key prefix / namespace (tauri-plugin-stronghold) |
-| `secrets:write` | split from read; write is lower trust, read is higher — same rationale as clipboard |
-| `media:camera` | OS-level permission prompt, separate integration surface |
-| `media:microphone` | same as camera |
-| `notifications:send` | — |
-| `custom:invoke` | named, host-registered function ID — escape hatch for anything unanticipated |
+**Adding a new one:** extend `sdk/src/types.ts` (a new interface + a field on `HostContext`), then wire the shell-side implementation. There's no allowlist or manifest entry to update. **`apps/server` is not a general place to route these** — it exists only for genuinely global/shared concerns (see CLAUDE.md's "Backend" section), and per-user/per-request calls like `LlmApi`/`EmailApi`/`CalendarApi`/`ContactsApi` aren't that. Those should be **direct Tauri Rust commands** instead — Rust already has full OS/network access, and `apps/shell/src-tauri/src/close_watch.rs` is the existing precedent for a command doing real OS-level work.
 
-**Deferred to later versions:** long-lived network connections beyond
-`chat:invoke` — `chat:invoke` is the one concrete instance today (a
-broker-relayed connection), but it's still the *only* consumer, so a
-generic capability (scoping by service? room? something else?) is
-deferred until a second real need shows up to model its shape against.
-A connector-invoke-style capability (external system integrations, e.g. iManage)
-and a workflow-state capability were both cut from v1 for the same
-reason plus one more — connector because there's no real connector to
-model its shape against yet, workflow because it turned out to be an
-app-specific business concept, not a system-level resource like the
-rest of this table.
-**Avoid entirely if possible:** `system:shell-exec` — undermines the
-sandboxing story if granted broadly.
-
-**Design test for the enum:** five unrelated plugin ideas (time
-tracker, billing tracker, client-comms summarizer, doc-comparison
-tool, calendar sync) should all be expressible as combinations of
-existing verbs. If one forces a new capability, that's a signal
-either the verb was too narrow or the plugin needs trust you should
-think hard about granting.
+`system:shell-exec`-style raw command execution is still avoided — not because of a trust boundary, but because it's a bad API shape regardless of trust level; model the underlying need as a specific typed operation instead.
 
 ## Repo structure (pnpm + turborepo monorepo)
 
@@ -147,15 +88,16 @@ think hard about granting.
 your-app/
 ├── apps/
 │   ├── shell/                    # the Tauri app
-│   │   ├── src-tauri/            # Rust: capability enforcement, protocol
-│   │   │   handler, signature verification, IPC commands
+│   │   ├── src-tauri/            # Rust: IPC commands
 │   │   └── src/                  # host React app (shell chrome)
-│   ├── server/                   # the core broker (identity/audit,
-│   │   │                           provisional llm stub)
+│   ├── server/                   # FeatherJS: serves apps/client's built
+│   │   │                           bundle, shared identity/audit service
 │   │   └── src/
-│   └── client/                   # the bespoke plugin app for this
-│       │                           deployment — client UI + optional
-│       │                           server-owned endpoint (apps/client/server)
+│   └── client/                   # the bespoke client app for this
+│       │                           deployment — the one thing that
+│       │                           actually changes when a team builds
+│       │                           their feature; optionally owns a
+│       │                           server-side endpoint (apps/client/server)
 │       ├── src/
 │       └── server/
 └── sdk/                          # shared contract
@@ -167,29 +109,23 @@ Each deployment (fork/checkout of this repo) has its own `apps/client` — that'
 ## Shared contract (`sdk`)
 
 ```typescript
-type Capability =
-  | 'files:read' | 'files:write' | 'files:watch' | 'files:open-dialog' | 'files:open-file'
-  | 'network:fetch' | 'llm:invoke'
-  | 'clipboard:read' | 'clipboard:write'
-  | 'database:query' | 'secrets:read' | 'secrets:write'
-  | 'media:camera' | 'media:microphone' | 'notifications:send'
-  | 'custom:invoke';
-
 interface PluginManifest {
   id: string;
   version: string;
   sdkVersion: string;       // semver range plugin was built against
   entry: string;
-  capabilities: Capability[];
-  signature: string;        // ed25519 sig over hash(manifest + entry file)
 }
 
 interface HostContext {
-  files?: { read, write, watch, openDialog, open };   // optional — undefined
-  llm?: { invoke };                                   // if capability
-  clipboard?: { read, write };                        // wasn't granted
-  database?: { query };
-  secrets?: { read, write };
+  files?: { read, write, watch, onClosed, openDialog, open };  // optional —
+  clipboard?: { read, write };                                 // undefined
+  secrets?: { read, write };                                   // if that
+  identity?: { get };                                          // API isn't
+  llm?: { invoke };                                            // wired up
+  email?: { send };                                            // yet, not
+  calendar?: { list, create };                                 // because of
+  contacts?: { search };                                       // a grant
+  device?: { get };
   camera?: { capture };
   microphone?: { record };
   notifications?: { send };
@@ -206,26 +142,43 @@ silently.
 
 ## Build phases
 
-1. **Static shell** — fixed capabilities, one hardcoded plugin, prove
-   the props contract makes sense
-2. **Local dynamic loading** — plugin as folder + custom protocol +
-   `React.lazy`, no signing yet
-3. **Manifest + capability declarations** — Rust checks requested
-   capabilities against allowlist, constructs scoped `HostContext`
-4. **Signing/verification** — ed25519, reject before any JS executes
-5. **Distribution** — manifest-of-manifests, internal artifact
-   server/network share for local deployment (no public CDN needed)
-6. **Real product wiring** — the app in `apps/client` becomes real
-   product functionality; file/chat/versioning becomes the core
-   capability surface it consumes
+1. **Static shell** — one hardcoded client app, prove the props
+   contract makes sense
+2. **Local dynamic loading** — client app as a built folder served over
+   a custom Rust `plugin://` protocol + `React.lazy`, reading a
+   dev-time-only local path
+3. ~~Manifest + capability declarations~~ / ~~Signing/verification~~ —
+   built out in full, then retired: these existed to support a
+   less-trusted-plugin-author threat model that doesn't describe this
+   project's actual team structure. Not planned; would be a fresh design
+   question if that ever changes.
+4. **Real distribution** — `apps/server` serves the built bundle over
+   HTTP instead of the shell reading a local path; the client app fetches
+   it directly. This is real, current state, and unrelated to the
+   retired signing/capability items above — it's a plain static-file
+   server, not a signed/verified artifact registry.
+5. **Real product wiring** — the app in `apps/client` becomes real
+   product functionality; per-user host APIs it needs get built as
+   direct Tauri Rust commands, and any genuinely global/shared feature
+   (broadcast, chat) gets added to `apps/server`
+6. **Graduation** — once a client-app feature has proven itself, it
+   forks out of this scaffold into its own standalone Tauri app with
+   its own shell, release cycle, and (if it needs one) real
+   authentication. This scaffold is intentionally not built to be that
+   end state — it stays a fast, disposable place to experiment with the
+   next idea.
 
-## Internal deployment notes
+## Deployment notes
 
-- Distributed via existing MDM (Jamf/Intune), not app stores
-- Delegated signing: IT holds root key, issues signing keys to
-  practice groups — central security controls *who* can sign, not
-  *what* gets built
-- `network:fetch` allowlists are firm-internal hostnames, easier to
-  audit than arbitrary external domains
-- Still need a shell updater — just far less frequently, since
-  feature velocity moves to plugin drops instead of shell releases
+- No code signing, no capability allowlist, no plugin registry — the
+  client app is trusted the same as the shell.
+- No auto-updater is built for the shell binary itself. This was
+  explicitly considered and explicitly deferred — bundle drops via
+  `apps/server` cover client-app feature velocity without one; revisit
+  if shell-level (Rust/Tauri) changes start needing to ship without a
+  manual reinstall.
+- `apps/server` exists, but only for global/shared concerns (bundle
+  distribution, a shared identity/audit service, and future
+  broadcast-style features) — it is not a general backend for arbitrary
+  per-request integrations. See CLAUDE.md's "Backend" section for the
+  test of what belongs there vs. as a direct Tauri command.

@@ -1,6 +1,6 @@
 // Bundles this plugin into a standalone JS module + manifest.json, the
-// "plugin as folder" artifact apps/shell's plugin:// protocol serves and
-// loads via React.lazy (see apps/shell/src/App.tsx).
+// artifact apps/server serves as static files and apps/shell loads via
+// React.lazy (see apps/server/src/app.ts, apps/shell/src/App.tsx).
 import { context, build } from "esbuild";
 import { cpSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";

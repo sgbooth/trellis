@@ -6,8 +6,7 @@
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
   "exports": {
-    ".": "./src/index.tsx",
-    "./server": "./server/index.ts"
+    ".": "./src/index.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,11 +14,9 @@
     "dev": "node build.mjs --watch"
   },
   "dependencies": {
-    "@trellis/sdk": "workspace:*",
-    "@feathersjs/transport-commons": "^5.0.0"
+    "@trellis/sdk": "workspace:*"
   },
   "devDependencies": {
-    "@feathersjs/feathers": "^5.0.0",
     "@types/node": "^22",
     "@types/react": "^19.1.8",
     "esbuild": "^0.24.0",
