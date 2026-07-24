@@ -15,12 +15,12 @@ fn greet(name: &str) -> String {
 /// window event with the path once it returns — fire-once, not a
 /// resubscribable stream, matching the "editor finished with this file"
 /// use case rather than general watching (that's `FilesApi.watch`).
-/// `close_watch` is only implemented for Linux today; other platforms fail
-/// fast here rather than spawning a thread that would panic in
-/// `unimplemented!()`.
+/// `close_watch` is implemented for Linux (inotify) and macOS (libproc
+/// polling); other platforms fail fast here rather than spawning a thread
+/// that would panic in `unimplemented!()`.
 #[tauri::command]
 fn watch_file_closed(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return Err("files:closed-event is not implemented on this platform yet".to_string());
     }
 

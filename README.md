@@ -24,6 +24,10 @@ Each deployment/team forks this repo and builds their own `apps/client` on top o
    ```
 3. **Build your feature in `apps/client`** — that's the one directory meant to change per deployment (see `CLAUDE.md` for the full operating manual on what's real vs. not-yet-implemented).
 
+## Forking and maintaining your fork
+
+The point of forking rather than copying is that your fork keeps a live connection to this repo's shell/SDK — new Tauri commands, dependency bumps, security fixes — without you having to re-implement any of it. Your fork's own changes should live almost entirely in `apps/client` (see CLAUDE.md's "Scope of future shell-side changes" for the narrow set of legitimate `apps/shell` edits: new Tauri-exposed commands and security/dependency maintenance). Keeping `apps/shell`/`sdk` untouched (or minimally touched) is what keeps the merges below conflict-free.
+
 ### Staying up to date with upstream
 
 To pull in shell/SDK changes from this repo without losing your fork's `apps/client` work:
@@ -43,13 +47,41 @@ git log main..upstream/main   # see what's new
 git diff main..upstream/main  # see the actual diff
 ```
 
+Do this periodically even absent a specific feature need — upstream is also where Tauri version bumps and security patches to the shell will land.
+
+### Versioning this repo
+
+Trellis isn't distributed as an npm package — forks don't `npm install` it, they `git fetch`/`git merge` from `upstream` as above. So "releasing" a version means tagging a commit on this repo, not publishing anywhere:
+
+```bash
+git tag -a v0.2.0 -m "Shell: macOS close-watch support"
+git push origin v0.2.0        # or upstream, if you're pushing to the shared repo
+```
+
+That gives forks a stable point to reference — "we're on `v0.1.0`, upstream is at `v0.3.0`, here's what changed" — via `git log v0.1.0..v0.3.0` or a GitHub Release page listing tags. Bump `version` in [tauri.conf.json](apps/shell/src-tauri/tauri.conf.json) (currently `0.1.0`) to match the tag; that field is also what shows up as the installed app's version once a fork builds a real installer. Follow semver by convention (breaking `HostContext`/`sdk` changes bump major, new host APIs bump minor, fixes bump patch) — nothing enforces it, it's just what makes the tags legible to forks deciding whether a merge is safe.
+
+This only applies to versioning the scaffold itself. A `apps/client` feature that's graduated into its own standalone app (see "What this is" above) gets its own independent release story once it's out — that's unrelated to tags on this repo.
+
+### Rebranding: app name, identifier, icon
+
+Everything below lives in `apps/shell/src-tauri/` and is safe to change per-fork without creating upstream-merge conflicts, since upstream doesn't touch your branding:
+
+- **App name and window title** — [tauri.conf.json](apps/shell/src-tauri/tauri.conf.json)'s `productName` and `app.windows[0].title`.
+- **Bundle identifier** — the same file's `identifier` (e.g. `com.simon.shell`); change this to your own reverse-DNS id before shipping a build to anyone, since it's what macOS/Windows use to distinguish your app from every other Tauri app on a machine.
+- **Icon** — replace the source artwork and regenerate the whole icon set (all the sizes under [icons/](apps/shell/src-tauri/icons)) rather than hand-editing individual PNGs:
+  ```bash
+  pnpm tauri icon path/to/your-icon.png   # wants a large (≥1024x1024) source image
+  ```
+  This regenerates everything `tauri.conf.json`'s `bundle.icon` list points at, plus the platform-specific sizes (`Square*Logo.png` for Windows Store, `icon.icns` for macOS, `icon.ico` for Windows) it doesn't explicitly list.
+
+None of this affects `apps/client` or `sdk` — it's purely the shell's presentation, so it's the kind of change you make once per fork and rarely touch again.
+
 # Project Summary: Dynamically-Loaded Client Shell (Tauri)
 
 A Tauri desktop shell that dynamically loads a bespoke client app fetched at runtime from a small companion server, without requiring a shell reinstall per feature. `apps/shell` and `apps/client` are built by the same team at the same trust level — there is no capability-review boundary between them, and no signing/sandboxing story to maintain.
 
 **Primary pitch:** ship a new feature by rebuilding `apps/client`, pushing it to the server, and reloading — no shell rebuild, no reinstall, no app-store-style release cycle. The value is deploy velocity, full stop; this project does not model or defend against a less-trusted plugin author.
 
-> **Earlier design history:** this project originally modeled `apps/client` as a less-trusted, signed/sandboxed plugin, reviewed once by IT against a fixed capability surface, loaded via a custom Rust `plugin://` protocol reading a local dev-time path (see the "Build phases" section below for what that looked like). The `Capability` enum, the Rust-enforced allowlist, and ed25519 signing were built out and then deliberately retired once it became clear the actual org structure doesn't have a less-trusted team to sandbox against. The FeatherJS server (`apps/server`) briefly went with it too, then came back for a different reason — see CLAUDE.md's "Backend" section — it's no longer a trust boundary, just where genuinely shared/global things live (bundle distribution, and later broadcast-style features). `CLAUDE.md` is the authoritative, current description of the architecture; this file has been updated to match.
 
 ## Architecture
 
@@ -76,7 +108,7 @@ The client app is a user-facing app built entirely on top of whatever `HostConte
 
 `HostContext` (see `sdk/src/types.ts`) is a plain set of optional fields, each an interface (`FilesApi`, `ClipboardApi`, `SecretsApi`, `IdentityApi`, `LlmApi`, `EmailApi`, `CalendarApi`, `ContactsApi`, `DeviceApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`). Fields are optional because the backing implementation may not be wired up yet, not because of any access grant — the client app should feature-detect (`if (host.device)`) rather than assume a field exists.
 
-Most of these are declared but not yet implemented: `FilesApi.read`/`write`/`watch`/`openDialog`, `LlmApi`, `ClipboardApi`, `SecretsApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`, `EmailApi`, `CalendarApi`, `ContactsApi`. `FilesApi.open`/`onClosed` (Linux only so far) and the identity/device APIs are real.
+Most of these are declared but not yet implemented: `FilesApi.read`/`write`/`watch`/`openDialog`, `LlmApi`, `ClipboardApi`, `SecretsApi`, `CameraApi`, `MicrophoneApi`, `NotificationsApi`, `EmailApi`, `CalendarApi`, `ContactsApi`. `FilesApi.open`/`onClosed` (Linux and macOS; Windows not yet implemented) and the identity/device APIs are real.
 
 **Adding a new one:** extend `sdk/src/types.ts` (a new interface + a field on `HostContext`), then wire the shell-side implementation. There's no allowlist or manifest entry to update. **`apps/server` is not a general place to route these** — it exists only for genuinely global/shared concerns (see CLAUDE.md's "Backend" section), and per-user/per-request calls like `LlmApi`/`EmailApi`/`CalendarApi`/`ContactsApi` aren't that. Those should be **direct Tauri Rust commands** instead — Rust already has full OS/network access, and `apps/shell/src-tauri/src/close_watch.rs` is the existing precedent for a command doing real OS-level work.
 
@@ -139,34 +171,6 @@ Plugin build config must externalize `react`/`react-dom`/
 `react/jsx-runtime` (host provides these at runtime) — the classic
 footgun is a duplicate React instance breaking hooks/context
 silently.
-
-## Build phases
-
-1. **Static shell** — one hardcoded client app, prove the props
-   contract makes sense
-2. **Local dynamic loading** — client app as a built folder served over
-   a custom Rust `plugin://` protocol + `React.lazy`, reading a
-   dev-time-only local path
-3. ~~Manifest + capability declarations~~ / ~~Signing/verification~~ —
-   built out in full, then retired: these existed to support a
-   less-trusted-plugin-author threat model that doesn't describe this
-   project's actual team structure. Not planned; would be a fresh design
-   question if that ever changes.
-4. **Real distribution** — `apps/server` serves the built bundle over
-   HTTP instead of the shell reading a local path; the client app fetches
-   it directly. This is real, current state, and unrelated to the
-   retired signing/capability items above — it's a plain static-file
-   server, not a signed/verified artifact registry.
-5. **Real product wiring** — the app in `apps/client` becomes real
-   product functionality; per-user host APIs it needs get built as
-   direct Tauri Rust commands, and any genuinely global/shared feature
-   (broadcast, chat) gets added to `apps/server`
-6. **Graduation** — once a client-app feature has proven itself, it
-   forks out of this scaffold into its own standalone Tauri app with
-   its own shell, release cycle, and (if it needs one) real
-   authentication. This scaffold is intentionally not built to be that
-   end state — it stays a fast, disposable place to experiment with the
-   next idea.
 
 ## Deployment notes
 
