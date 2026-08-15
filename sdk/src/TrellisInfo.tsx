@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import type { DeviceInfo, IdentityInfo } from "./types";
 import type { PluginComponentProps } from "./definePlugin";
 
+/**
+ * Starter component for a new client app: identity + device info, both
+ * feature-detected off HostContext.
+ *
+ * Deliberately domain-free. Anything built on a concrete channel (chat,
+ * matter, docket) belongs in apps/client, not here — those channels' types
+ * live in apps/client/rpcSpec.ts, and importing them from the SDK would
+ * invert the sdk → app dependency.
+ */
 export const TrellisInfo: React.FC<PluginComponentProps> = ({ host }) => {
   const [identity, setIdentity] = useState<IdentityInfo | null>(null);
   const [device, setDevice] = useState<DeviceInfo | null>(null);

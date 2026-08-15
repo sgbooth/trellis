@@ -6,7 +6,10 @@
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
   "exports": {
-    ".": "./src/index.tsx"
+    ".": "./src/index.tsx",
+    "./rpcSpec": "./rpcSpec.ts",
+    "./channelSpec": "./channelSpec.ts",
+    "./server": "./server/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

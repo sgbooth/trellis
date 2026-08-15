@@ -1,3 +1,5 @@
+import type { RealtimeApi } from "./realtime.js";
+
 export interface PluginManifest {
   id: string;
   name: string;
@@ -185,6 +187,7 @@ export interface HostContext {
   clipboard?: ClipboardApi;
   secrets?: SecretsApi;
   identity?: IdentityApi;
+  realtime?: RealtimeApi;
   llm?: LlmApi;
   email?: EmailApi;
   calendar?: CalendarApi;
