@@ -1,3 +1,5 @@
+import type { RealtimeApi } from "./realtime.js";
+
 export type Capability =
   | "files:read"
   | "files:write"
@@ -16,7 +18,19 @@ export type Capability =
   | "notifications:send"
   | "custom:invoke"
   | "identity:read"
-  | "chat:invoke"
+  /**
+   * Join broker channels and receive their events; and publish into them.
+   * Split read/write like `clipboard:*` and `secrets:*` — receiving is a
+   * lower-trust act than writing into a room other people are watching.
+   *
+   * Deliberately coarse: *which* rooms (`matter/{id}`, `chat/{id}`) is not
+   * expressible here, and mustn't become manifest syntax — that would put an
+   * app-specific business concept into the capability vocabulary, the same
+   * mistake that got `workflow:read` cut. Room-level restriction belongs in
+   * Tauri's own capabilities/*.json plus the broker's authorizeSubscribe.
+   */
+  | "realtime:subscribe"
+  | "realtime:publish"
   | "device:info";
 
 export interface PluginManifest {
@@ -88,22 +102,6 @@ export interface IdentityApi {
   get(): Promise<IdentityInfo>;
 }
 
-export interface ChatMessage {
-  from: string;
-  text: string;
-  ts: number;
-}
-
-/**
- * Long-lived relay connection to a broker-hosted chat service. Deliberately
- * separate from `network:fetch`, which is one-shot and allowed-domain-scoped
- * — chat is a persistent connection with a different lifecycle/threat shape.
- */
-export interface ChatApi {
-  send(text: string): Promise<void>;
-  onMessage(listener: (message: ChatMessage) => void): () => void;
-}
-
 /**
  * OS/device info for the machine the shell is running on — hostname,
  * platform, architecture, etc. Purely informational (demonstrates the
@@ -148,7 +146,7 @@ export interface NotificationsApi {
 /**
  * Capabilities the plugin didn't declare (or wasn't granted) are omitted
  * entirely, not present-but-throwing — plugins should feature-detect via
- * `if (host.chat)` rather than try/catch.
+ * `if (host.realtime)` rather than try/catch.
  */
 export interface HostContext {
   files?: FilesApi;
@@ -157,7 +155,7 @@ export interface HostContext {
   database?: DatabaseApi;
   secrets?: SecretsApi;
   identity?: IdentityApi;
-  chat?: ChatApi;
+  realtime?: RealtimeApi;
   device?: DeviceApi;
   camera?: CameraApi;
   microphone?: MicrophoneApi;

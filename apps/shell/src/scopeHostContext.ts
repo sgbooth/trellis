@@ -2,7 +2,13 @@ import type { Capability, HostContext } from "@trellis/sdk";
 
 const CAPABILITY_TO_HOST_KEY: Partial<Record<Capability, keyof HostContext>> = {
   "identity:read": "identity",
-  "chat:invoke": "chat",
+  // Both collapse to one host key — same many-to-one shape as the five
+  // files:* entries below. RealtimeApi doesn't yet enforce the
+  // subscribe-vs-publish split internally, so a plugin granted only
+  // `realtime:subscribe` still receives a publish-capable object; tightening
+  // that means handing out a narrowed API here, not changing this map.
+  "realtime:subscribe": "realtime",
+  "realtime:publish": "realtime",
   "device:info": "device",
   "files:read": "files",
   "files:write": "files",

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { HostContext, IdentityInfo, PluginManifest, PluginModule } from "@trellis/sdk";
 import { createIdentityApi } from "./identityHost";
-import { createChatApi } from "./chatHost";
+import { createRealtimeApi } from "./realtimeHost";
 import { createDeviceApi } from "./deviceHost";
 import { createFilesApi } from "./filesHost";
 import { scopeHostContext } from "./scopeHostContext";
@@ -48,7 +48,7 @@ function App() {
     const base: HostContext = { device: createDeviceApi(), files: createFilesApi() };
     if (identity) {
       base.identity = { get: async () => identity };
-      base.chat = createChatApi(identity);
+      base.realtime = createRealtimeApi(identity);
     }
     return base;
   }, [identity]);

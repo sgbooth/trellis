@@ -182,18 +182,18 @@ mod tests {
 
     #[test]
     fn strips_capabilities_outside_the_allowlist() {
-        let manifest = br#"{"id":"client","capabilities":["chat:invoke","llm:invoke","files:write"]}"#;
+        let manifest = br#"{"id":"client","capabilities":["realtime:subscribe","llm:invoke","files:write"]}"#;
         let filtered = filter_manifest_capabilities(manifest).expect("valid manifest should parse");
         let value: serde_json::Value = serde_json::from_slice(&filtered).unwrap();
-        assert_eq!(value["capabilities"], serde_json::json!(["chat:invoke"]));
+        assert_eq!(value["capabilities"], serde_json::json!(["realtime:subscribe"]));
     }
 
     #[test]
     fn leaves_fully_allowed_manifests_unchanged() {
-        let manifest = br#"{"id":"client","capabilities":["chat:invoke","identity:read"]}"#;
+        let manifest = br#"{"id":"client","capabilities":["realtime:subscribe","identity:read"]}"#;
         let filtered = filter_manifest_capabilities(manifest).expect("valid manifest should parse");
         let value: serde_json::Value = serde_json::from_slice(&filtered).unwrap();
-        assert_eq!(value["capabilities"], serde_json::json!(["chat:invoke", "identity:read"]));
+        assert_eq!(value["capabilities"], serde_json::json!(["realtime:subscribe", "identity:read"]));
     }
 
     #[test]

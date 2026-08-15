@@ -10,12 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@feathersjs/errors": "^5.0.0",
-    "@feathersjs/feathers": "^5.0.0",
-    "@feathersjs/koa": "^5.0.0",
-    "@feathersjs/socketio": "^5.0.0",
-    "@feathersjs/transport-commons": "^5.0.0",
-    "@trellis/client": "workspace:*"
+    "@trellis/client": "workspace:*",
+    "@trellis/sdk": "workspace:*",
+    "socket.io": "^4.8.0"
   },
   "devDependencies": {
     "@types/node": "^22",

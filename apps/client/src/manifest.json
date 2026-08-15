@@ -4,5 +4,10 @@
   "version": "0.1.0",
   "sdkVersion": "^0.1.0",
   "entry": "index.tsx",
-  "capabilities": ["chat:invoke", "identity:read", "device:info"]
+  "capabilities": [
+    "realtime:subscribe",
+    "realtime:publish",
+    "identity:read",
+    "device:info"
+  ]
 }

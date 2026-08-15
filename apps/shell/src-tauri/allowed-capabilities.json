@@ -1,1 +1,6 @@
-["chat:invoke", "identity:read", "device:info"]
+[
+  "realtime:subscribe",
+  "realtime:publish",
+  "identity:read",
+  "device:info"
+]
