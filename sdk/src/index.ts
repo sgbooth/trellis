@@ -1,5 +1,4 @@
 export type {
-  PluginManifest,
   FileEntry,
   FilesApi,
   ClipboardApi,
@@ -27,29 +26,38 @@ export type {
   Channel,
   ParsedChannel,
   Subscription,
+  SubscribeOptions,
   RealtimeApi,
   HandlerContext,
-  SnapshotProvider,
-  PublishHandler,
-  Registry,
+  ChannelContract,
+  ChannelFamily,
+  ChannelHandlersFor,
+  ChannelHandlerMap,
+  ErasedChannelHandlers,
+  StreamFrame,
   Result,
   WireError,
   ClientToServerEvents,
   ServerToClientEvents,
   SocketData,
 } from "./realtime";
-export { channel, parseChannel, asRegistry, SOCKET_NAMESPACE } from "./realtime";
+export { channel, parseChannel, SOCKET_NAMESPACE } from "./realtime";
 // Also available React-free as `@trellis/sdk/rpc`.
 export type {
   RpcSpec,
   RpcContext,
   RpcClient,
   RpcInvoke,
+  RpcStream,
+  RpcStreamInvoke,
   HandlerMap,
+  HandlerFor,
   HandlersFor,
   MethodKeysOf,
+  StreamingKeysOf,
   ParamsFor,
   ResultFor,
+  ChunkFor,
 } from "./rpc";
 export { createRpcClient } from "./rpc";
 export { definePlugin } from "./definePlugin";

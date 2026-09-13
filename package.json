@@ -1,16 +1,21 @@
 {
   "name": "trellis",
   "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
+    "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "tauri": "pnpm --filter @trellis/shell tauri"
+    "tauri": "pnpm --filter @trellis/shell tauri",
+    "reset:client": "node scripts/reset-client.mjs"
   },
   "devDependencies": {
-    "turbo": "^2.3.0",
-    "typescript": "^5.7.0"
+    "turbo": "^2.10.12",
+    "typescript": "^7.0.2"
   }
 }

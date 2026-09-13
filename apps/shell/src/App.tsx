@@ -1,60 +1,47 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import type { HostContext, IdentityInfo, PluginModule } from "@trellis/sdk";
-import { createIdentityApi } from "./identityHost";
-import { createRealtimeApi } from "./realtimeHost";
-import { createDeviceApi } from "./deviceHost";
-import { createFilesApi } from "./filesHost";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import type { HostContext } from "@trellis/sdk";
+import { clearPluginCache, loadPluginComponent } from "./pluginLoader";
 import { PluginErrorBoundary } from "./PluginErrorBoundary";
 import "./App.css";
 
-// dev-only hardcode — no deployed server location yet. apps/server serves
-// apps/client's built bundle (see apps/server/src/app.ts) — this is the
-// actual distribution mechanism: push a new build there and every running
-// shell picks it up on next load, no per-machine file copy or shell
-// rebuild. Replaces the old Rust `plugin://` protocol handler, which read
-// straight off local disk.
-const SERVER_URL = "http://localhost:8787";
+/**
+ * The chrome around the dynamically-loaded client app, shared by every entry
+ * point. Deliberately presentational: it takes a fully-built HostContext
+ * rather than constructing one, because *which* host it gets is the whole
+ * difference between the desktop and browser entries (see src/hosts/). It
+ * knows nothing about Tauri.
+ */
+export interface AppProps {
+  /** Everything the entry point's host could construct, unscoped — apps/client
+   *  and apps/shell are the same trust level, so there's no scoping step. */
+  host: HostContext;
+  /** Where the client bundle is fetched from; also the broker's origin. */
+  serverUrl: string;
+}
 
-// dist/index.js's default export is definePlugin's whole { manifest,
-// Component }, not a bare component — React.lazy needs { default:
-// ComponentType }, so remap it in the resolved-module .then(). The cast is
-// needed because a non-literal dynamic import specifier resolves to `any`;
-// without it, TS can't infer PluginComponent's prop type (host) and every
-// usage below would need an `any` escape hatch instead of one cast here.
-const PluginComponent = lazy(() =>
-  import(/* @vite-ignore */ `${SERVER_URL}/index.js`).then((mod) => {
-    const pluginModule = mod.default as PluginModule;
-    return { default: pluginModule.Component };
-  }),
-);
+function App({ host, serverUrl }: AppProps) {
+  // Bumped to retry a failed load. It is part of the memo key, so a retry
+  // builds a *new* lazy component — re-rendering the old one would replay its
+  // cached rejection without another request.
+  const [attempt, setAttempt] = useState(0);
 
-function App() {
-  const [identity, setIdentity] = useState<IdentityInfo | null>(null);
+  // `attempt` is in the dep list deliberately, though the factory doesn't read
+  // it: bumping it is the whole retry mechanism. (No linter here to object —
+  // see CLAUDE.md's "Workflow".)
+  const PluginComponent = useMemo(() => loadPluginComponent(serverUrl), [serverUrl, attempt]);
 
-  useEffect(() => {
-    createIdentityApi()
-      .get()
-      .then(setIdentity);
-  }, []);
-
-  // The host object handed to the plugin. apps/client and apps/shell are
-  // built by the same team at the same trust level, so there's no
-  // capability-scoping step — every API the shell can construct is passed
-  // straight through.
-  const fullHost: HostContext = useMemo(() => {
-    const base: HostContext = { device: createDeviceApi(), files: createFilesApi() };
-    if (identity) {
-      base.identity = { get: async () => identity };
-      base.realtime = createRealtimeApi(identity);
-    }
-    return base;
-  }, [identity]);
+  const retry = useCallback(() => {
+    clearPluginCache(serverUrl);
+    setAttempt((n) => n + 1);
+  }, [serverUrl]);
 
   return (
     <div className="app-root">
-      <PluginErrorBoundary>
-        <Suspense fallback={<p>Loading plugin…</p>}>
-          <PluginComponent host={fullHost} />
+      {/* Keyed so a retry remounts the boundary with clean state, rather than
+          leaving a stale error latched across the new attempt. */}
+      <PluginErrorBoundary key={attempt} onRetry={retry}>
+        <Suspense fallback={<p>Loading client app…</p>}>
+          <PluginComponent host={host} />
         </Suspense>
       </PluginErrorBoundary>
     </div>

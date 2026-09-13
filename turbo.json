@@ -3,14 +3,21 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "target/**"]
+      "outputs": ["dist/**", "target/**"],
+      // Vite substitutes VITE_* into the shell bundle at build time (see
+      // apps/shell/src/config.ts), so it has to be part of the cache key —
+      // otherwise a cached build silently ships the previous deployment's
+      // broker URL. Add any new VITE_* variable here too.
+      "env": ["VITE_TRELLIS_SERVER_URL"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": {},
     "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
       "dependsOn": ["^build"]
     }
   }

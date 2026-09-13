@@ -1,8 +1,8 @@
-// Bundles this plugin into a standalone JS module + manifest.json, the
-// artifact apps/server serves as static files and apps/shell loads via
-// React.lazy (see apps/server/src/app.ts, apps/shell/src/App.tsx).
+// Bundles this client app into a standalone JS module, the artifact
+// apps/server serves as a static file and apps/shell loads via React.lazy
+// (see apps/server/src/app.ts, apps/shell/src/App.tsx).
 import { context, build } from "esbuild";
-import { cpSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const watch = process.argv.includes("--watch");
@@ -28,16 +28,10 @@ const options = {
   logLevel: "info",
 };
 
-function copyManifest() {
-  cpSync("src/manifest.json", "dist/manifest.json");
-}
-
 if (watch) {
   const ctx = await context(options);
-  copyManifest();
   await ctx.watch();
   console.log("[client] watching for changes…");
 } else {
   await build(options);
-  copyManifest();
 }

@@ -2,12 +2,14 @@
   "name": "@trellis/server",
   "private": true,
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc --noEmit && node build.mjs",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@trellis/client": "workspace:*",
@@ -16,7 +18,9 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "esbuild": "^0.28.2",
+    "socket.io-client": "^4.7.0",
     "tsx": "^4",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

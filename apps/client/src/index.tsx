@@ -1,13 +1,9 @@
 import { definePlugin, TrellisInfo } from "@trellis/sdk";
-import type { PluginComponentProps, PluginManifest } from "@trellis/sdk";
+import type { PluginComponentProps } from "@trellis/sdk";
 import { ChatPanel } from "./ChatPanel";
+import { PeerPanel } from "./PeerPanel";
+import { WeatherPanel } from "./WeatherPanel";
 import { initRpc } from "./rpc.js";
-import manifestJson from "./manifest.json";
-
-// JSON imports type as plain strings, not PluginManifest — cast back.
-// manifest.json is also what the build step (build.mjs) copies alongside
-// the bundled JS output.
-const manifest = manifestJson as PluginManifest;
 
 // TrellisInfo is the SDK's domain-free starter (identity + device); anything
 // built on this deployment's own channels belongs here instead.
@@ -19,11 +15,10 @@ const Component: React.FC<PluginComponentProps> = ({ host }) => {
     <>
       <TrellisInfo host={host} />
       <ChatPanel host={host} />
+      <PeerPanel host={host} />
+      <WeatherPanel host={host} />
     </>
   );
 };
 
-export default definePlugin({
-  manifest,
-  Component,
-});
+export default definePlugin({ Component });

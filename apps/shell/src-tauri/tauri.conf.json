@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "shell",
+  "productName": "Trellis",
   "version": "0.1.0",
-  "identifier": "com.simon.shell",
+  "identifier": "dev.trellis.app",
   "build": {
     "beforeDevCommand": "pnpm -w run dev",
     "devUrl": "http://localhost:1420",
@@ -12,13 +12,35 @@
   "app": {
     "windows": [
       {
-        "title": "shell",
+        "title": "Trellis",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' http://localhost:8787 https://trellis.example.com",
+        "connect-src": "'self' ipc: http://ipc.localhost http://localhost:8787 ws://localhost:8787 https://trellis.example.com wss://trellis.example.com",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' http://localhost:8787",
+        "connect-src": "'self' ipc: http://ipc.localhost http://localhost:8787 ws://localhost:8787 ws://localhost:1420 ws://localhost:1421",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'"
+      }
     }
   },
   "bundle": {

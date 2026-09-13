@@ -1,22 +1,23 @@
 use std::io;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 /// Blocks the calling thread until `path` is closed by a process that had it
 /// open for writing. Used by the mirror-open-then-reupload flow (download
 /// from S3, open locally, wait for the external app to finish, push back) to
 /// know when to clean up, without shelling out to `lsof`.
-pub fn wait_for_write_close(path: &Path) -> io::Result<()> {
+pub fn wait_for_write_close(path: &Path, cancelled: &AtomicBool) -> io::Result<bool> {
     #[cfg(target_os = "linux")]
     {
-        linux::wait_for_write_close(path)
+        linux::wait_for_write_close(path, cancelled)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::wait_for_write_close(path)
+        macos::wait_for_write_close(path, cancelled)
     }
     #[cfg(target_os = "windows")]
     {
-        windows::wait_for_write_close(path)
+        windows::wait_for_write_close(path, cancelled)
     }
 }
 
@@ -29,6 +30,9 @@ mod linux {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::io::RawFd;
     use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
 
     /// Closes the inotify fd on every exit path, including `?` early returns.
     struct InotifyFd(RawFd);
@@ -41,10 +45,10 @@ mod linux {
         }
     }
 
-    pub fn wait_for_write_close(path: &Path) -> io::Result<()> {
+    pub fn wait_for_write_close(path: &Path, cancelled: &AtomicBool) -> io::Result<bool> {
         let cpath = CString::new(path.as_os_str().as_bytes())?;
 
-        let fd = unsafe { libc::inotify_init1(0) };
+        let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -59,10 +63,17 @@ mod linux {
         let mut buf = [0u8; 4096];
 
         loop {
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
             let n = unsafe { libc::read(fd.0, buf.as_mut_ptr() as *mut c_void, buf.len()) };
             if n < 0 {
                 let err = io::Error::last_os_error();
                 if err.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                if err.kind() == io::ErrorKind::WouldBlock {
+                    thread::sleep(Duration::from_millis(50));
                     continue;
                 }
                 return Err(err);
@@ -75,7 +86,7 @@ mod linux {
                 // via `event.len` rather than read).
                 let event = unsafe { &*(buf.as_ptr().add(offset) as *const libc::inotify_event) };
                 if event.mask & libc::IN_CLOSE_WRITE != 0 {
-                    return Ok(());
+                    return Ok(true);
                 }
                 offset += event_size + event.len as usize;
             }
@@ -99,6 +110,7 @@ mod macos {
     use std::os::unix::fs::MetadataExt;
     use std::path::Path;
     use std::ptr;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
 
@@ -246,7 +258,7 @@ mod macos {
         false
     }
 
-    pub fn wait_for_write_close(path: &Path) -> io::Result<()> {
+    pub fn wait_for_write_close(path: &Path, cancelled: &AtomicBool) -> io::Result<bool> {
         let metadata = std::fs::metadata(path)?;
         let dev = metadata.dev() as u32;
         let ino = metadata.ino();
@@ -257,12 +269,18 @@ mod macos {
         // right as the file is handed to the external app), same tradeoff
         // already made on Linux rather than new risk introduced here.
         while !is_open(dev, ino) {
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
             thread::sleep(POLL_INTERVAL);
         }
         while is_open(dev, ino) {
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(false);
+            }
             thread::sleep(POLL_INTERVAL);
         }
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -273,8 +291,11 @@ mod macos {
 mod windows {
     use std::io;
     use std::path::Path;
+    use std::sync::atomic::AtomicBool;
 
-    pub fn wait_for_write_close(_path: &Path) -> io::Result<()> {
-        unimplemented!("Windows close-detection not yet implemented — see close_watch.rs doc comment")
+    pub fn wait_for_write_close(_path: &Path, _cancelled: &AtomicBool) -> io::Result<bool> {
+        unimplemented!(
+            "Windows close-detection not yet implemented — see close_watch.rs doc comment"
+        )
     }
 }

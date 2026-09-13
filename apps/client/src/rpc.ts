@@ -1,7 +1,7 @@
 import { createRpcClient } from "@trellis/sdk/rpc";
 import type { RpcClient } from "@trellis/sdk/rpc";
 import type { HostContext } from "@trellis/sdk";
-import { rpcSpec } from "../rpcSpec.js";
+import { rpcSpec } from "#rpcSpec";
 
 /**
  * The app-wide RPC client: `import { rpc } from "./rpc"` then
@@ -14,14 +14,23 @@ import { rpcSpec } from "../rpcSpec.js";
  * instead of `undefined` if it's ever wrong.
  */
 let client: RpcClient<typeof rpcSpec> | null = null;
+let currentRealtime: HostContext["realtime"] | null = null;
 
 export function initRpc(host: HostContext): void {
-  if (!host.realtime) return; // capability not granted — leave rpc unarmed
+  if (!host.realtime) {
+    client = null;
+    currentRealtime = null;
+    return;
+  }
   const realtime = host.realtime;
-  client = createRpcClient(rpcSpec, (method, params) => realtime.call(method, params));
+  if (currentRealtime === realtime) return;
+  currentRealtime = realtime;
+  client = createRpcClient(
+    rpcSpec,
+    (method, params) => realtime.call(method, params),
+    (method, params) => realtime.stream(method, params),
+  );
 }
-
-export const isRpcReady = (): boolean => client !== null;
 
 export const rpc = new Proxy({} as RpcClient<typeof rpcSpec>, {
   get(_target, prop) {

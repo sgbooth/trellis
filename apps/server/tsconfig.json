@@ -3,12 +3,17 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "strict": true,
-    "outDir": "dist",
-    "declaration": false,
     "skipLibCheck": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "types": ["node"],
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

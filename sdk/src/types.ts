@@ -1,14 +1,5 @@
 import type { RealtimeApi } from "./realtime.js";
 
-export interface PluginManifest {
-  id: string;
-  name: string;
-  version: string;
-  /** semver range this plugin was built against */
-  sdkVersion: string;
-  entry: string;
-}
-
 export interface FileEntry {
   path: string;
   isDirectory: boolean;
@@ -24,7 +15,7 @@ export interface FilesApi {
    * events, backed by a different (and on some platforms more privileged)
    * mechanism per OS. See apps/shell/src-tauri/src/close_watch.rs.
    */
-  onClosed?(path: string, callback: () => void): () => void;
+  onClosed?(path: string, callback: () => void, onError?: (error: Error) => void): Promise<() => void>;
   openDialog?(options?: { multiple?: boolean; directory?: boolean }): Promise<string[]>;
   /** Opens a path with the OS default app (or `openWith` if given). Real,
    * Tauri-opener-backed implementation — unlike the rest of FilesApi. */
@@ -67,12 +58,20 @@ export type LlmEvent =
   | { type: "error"; message: string };
 
 /**
- * Streaming relay to an LLM provider call. Not yet implemented — no backend
- * exists. When built, this should be a direct Tauri Rust command (see
- * close_watch.rs for the precedent of Rust doing real OS/network work
- * directly), not a broker call — there is no broker in this architecture.
- * Chunk-streamed rather than buffer-then-return so a real implementation
- * doesn't double perceived latency.
+ * Streaming relay to an LLM provider call. Still not implemented.
+ *
+ * The guidance here has changed, and the old comment (a Tauri command, "there
+ * is no broker in this architecture") is out of date on both counts. There IS
+ * a broker now, and more importantly the shell has a browser entry point with
+ * no Tauri at all — so a Tauri-command implementation would silently not
+ * exist for web users. LLM streaming that has to work on both hosts belongs
+ * on the broker, as a **streaming RPC method** (`chunk` in rpcSpec.ts, an
+ * `async function*` handler); see the "RPC" section of CLAUDE.md.
+ *
+ * That likely makes this interface redundant when the time comes — the client
+ * would call `rpc.llm.stream(...)` rather than reach through HostContext —
+ * so treat the shape below as unclaimed rather than settled. Chunk-streamed
+ * either way, so a real implementation doesn't double perceived latency.
  */
 export interface LlmApi {
   invoke(prompt: string, onEvent: (event: LlmEvent) => void, options?: { maxTokens?: number }): () => void;

@@ -17,12 +17,30 @@ export const TrellisInfo: React.FC<PluginComponentProps> = ({ host }) => {
 
   useEffect(() => {
     if (!host.identity) return;
-    host.identity.get().then(setIdentity);
+    let cancelled = false;
+    void host.identity
+      .get()
+      .then((value) => {
+        if (!cancelled) setIdentity(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [host.identity]);
 
   useEffect(() => {
     if (!host.device) return;
-    host.device.get().then(setDevice);
+    let cancelled = false;
+    void host.device
+      .get()
+      .then((value) => {
+        if (!cancelled) setDevice(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [host.device]);
 
   return (

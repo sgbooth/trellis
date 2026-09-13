@@ -1,7 +1,0 @@
-{
-  "id": "trellisBase",
-  "name": "Trellis Base Page",
-  "version": "0.1.0",
-  "sdkVersion": "^0.1.0",
-  "entry": "index.tsx"
-}

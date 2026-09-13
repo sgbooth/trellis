@@ -1,6 +1,8 @@
 import type { HandlerMap } from "@trellis/sdk/rpc";
-import { rpcSpec } from "../rpcSpec.js";
+import { rpcSpec } from "#rpcSpec";
 import { chatHandlers } from "./handlers/chatHandlers.js";
+import { peerHandlers } from "./handlers/peerHandlers.js";
+import { weatherHandlers } from "./handlers/weatherHandlers.js";
 
 /**
  * Every handler file, spread into one flat map. The `satisfies` is what
@@ -9,4 +11,6 @@ import { chatHandlers } from "./handlers/chatHandlers.js";
  */
 export const handlers = {
   ...chatHandlers,
+  ...peerHandlers,
+  ...weatherHandlers,
 } satisfies HandlerMap<typeof rpcSpec>;
